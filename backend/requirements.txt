@@ -4,5 +4,5 @@ python-multipart
 pymupdf
 python-dotenv
 google-genai
-kokoro
+kokoro==0.9.4
 soundfile
