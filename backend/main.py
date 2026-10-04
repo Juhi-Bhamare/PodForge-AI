@@ -1,8 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
 from services.pdf_processor import extract_text_from_pdf
 from services.ai_generator import generate_podcast_script
 from services.tts_generator import generate_podcast_audio
+
 import tempfile
 import os
 
@@ -14,14 +17,42 @@ app = FastAPI(
 )
 
 
+# --------------------------------------------------
+# CORS
+# --------------------------------------------------
+
+allowed_origins = [
+    "http://localhost:5173",
+]
+
+frontend_url = os.getenv("FRONTEND_URL")
+
+if frontend_url:
+    allowed_origins.append(frontend_url)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+# --------------------------------------------------
+# Paths
+# --------------------------------------------------
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+# --------------------------------------------------
+# Basic routes
+# --------------------------------------------------
 
 @app.get("/")
 def root():
@@ -36,6 +67,10 @@ def health():
         "status": "healthy"
     }
 
+
+# --------------------------------------------------
+# PDF upload and text extraction
+# --------------------------------------------------
 
 @app.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -73,8 +108,14 @@ async def upload_pdf(file: UploadFile = File(...)):
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
+
+# --------------------------------------------------
+# Generate podcast script
+# --------------------------------------------------
+
 @app.post("/generate-podcast")
 async def generate_podcast(file: UploadFile = File(...)):
+
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400,
@@ -85,15 +126,14 @@ async def generate_podcast(file: UploadFile = File(...)):
     temp_path = None
 
     try:
-        # Save PDF temporarily
         with tempfile.NamedTemporaryFile(
             delete=False,
             suffix=".pdf"
         ) as temp_file:
+
             temp_file.write(contents)
             temp_path = temp_file.name
 
-        # Extract text
         result = extract_text_from_pdf(temp_path)
 
         if not result["text"]:
@@ -102,8 +142,9 @@ async def generate_podcast(file: UploadFile = File(...)):
                 detail="Could not extract text from this PDF."
             )
 
-        # Generate podcast script with Gemini
-        podcast_script = generate_podcast_script(result["text"])
+        podcast_script = generate_podcast_script(
+            result["text"]
+        )
 
         return {
             "filename": file.filename,
@@ -117,7 +158,10 @@ async def generate_podcast(file: UploadFile = File(...)):
         raise
 
     except Exception as error:
-        print(f"Podcast generation error: {error}")
+        print(
+            f"Podcast generation error: {error}"
+        )
+
         raise HTTPException(
             status_code=500,
             detail="Failed to generate the podcast script."
@@ -127,10 +171,16 @@ async def generate_podcast(file: UploadFile = File(...)):
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
-from fastapi.responses import FileResponse
+
+# --------------------------------------------------
+# Generate podcast + audio
+# --------------------------------------------------
 
 @app.post("/generate-podcast-audio")
-async def generate_podcast_audio_endpoint(file: UploadFile = File(...)):
+async def generate_podcast_audio_endpoint(
+    file: UploadFile = File(...)
+):
+
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400,
@@ -146,6 +196,7 @@ async def generate_podcast_audio_endpoint(file: UploadFile = File(...)):
             delete=False,
             suffix=".pdf"
         ) as temp_file:
+
             temp_file.write(contents)
             temp_pdf = temp_file.name
 
@@ -158,14 +209,14 @@ async def generate_podcast_audio_endpoint(file: UploadFile = File(...)):
                 detail="Could not extract text from this PDF."
             )
 
-        # Generate podcast script
+        # Generate podcast script with Gemini
         podcast_script = generate_podcast_script(
             result["text"]
         )
 
-        # Generate audio
+        # Generate podcast audio with Kokoro
         output_path = os.path.join(
-            "outputs",
+            OUTPUT_DIR,
             "podcast.wav"
         )
 
@@ -187,7 +238,9 @@ async def generate_podcast_audio_endpoint(file: UploadFile = File(...)):
         raise
 
     except Exception as error:
-        print(f"Podcast audio generation error: {error}")
+        print(
+            f"Podcast audio generation error: {error}"
+        )
 
         raise HTTPException(
             status_code=500,
@@ -199,10 +252,15 @@ async def generate_podcast_audio_endpoint(file: UploadFile = File(...)):
             os.remove(temp_pdf)
 
 
+# --------------------------------------------------
+# Serve generated podcast audio
+# --------------------------------------------------
+
 @app.get("/podcast-audio")
 def get_podcast_audio():
+
     audio_path = os.path.join(
-        "outputs",
+        OUTPUT_DIR,
         "podcast.wav"
     )
 
