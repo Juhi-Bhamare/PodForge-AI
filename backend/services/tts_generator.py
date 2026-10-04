@@ -4,7 +4,6 @@ import numpy as np
 import os
 import re
 
-pipeline = KPipeline(lang_code="a")
 
 VOICE_MAP = {
     "HOST 1": "af_heart",
@@ -47,6 +46,11 @@ def generate_podcast_audio(script: str, output_path: str) -> str:
 
     if not segments:
         raise ValueError("No valid HOST 1 / HOST 2 dialogue found.")
+
+    # Load Kokoro only when audio generation is requested.
+    # This prevents the model from consuming large amounts
+    # of memory when the FastAPI server starts.
+    pipeline = KPipeline(lang_code="a")
 
     audio_segments = []
 
