@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pymupdf
+python-dotenv
+google-genai
+kokoro
+soundfile
